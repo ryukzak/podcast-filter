@@ -76,6 +76,7 @@ func FilterPodcasts(podcast *Podcast, re string, negative bool) ([]Item, error) 
 
 func filterHandler(w http.ResponseWriter, r *http.Request) {
 	podcastURL := r.URL.Query().Get("feed")
+	title := r.URL.Query().Get("title")
 	re := r.URL.Query().Get("re")
 	negative := r.URL.Query().Get("neg") == "true"
 
@@ -92,7 +93,13 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	feed.Channel.Title = fmt.Sprintf("%s (filtered)", feed.Channel.Title)
+
+	if title != "" {
+		feed.Channel.Title = title
+	} else {
+		feed.Channel.Title = fmt.Sprintf("%s (filtered)", feed.Channel.Title)
+	}
+
 	feed.Channel.Items = filteredItems
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
