@@ -57,14 +57,14 @@ func GetPodcasts(podcastURL string) (*Podcast, error) {
 	return podcast, nil
 }
 
-func FilterPodcasts(podcast *Podcast, re string, negative bool) ([]Item, error) {
+func FilterPodcasts(items []Item, re string, negative bool) ([]Item, error) {
 	regex, err := regexp.Compile(re)
 	if err != nil {
 		return nil, err
 	}
 
 	filteredItems := make([]Item, 0)
-	for _, item := range podcast.Channel.Items {
+	for _, item := range items {
 		isMatch := regex.MatchString(item.Title)
 		if isMatch && !negative || !isMatch && negative {
 			filteredItems = append(filteredItems, item)
@@ -77,22 +77,34 @@ func FilterPodcasts(podcast *Podcast, re string, negative bool) ([]Item, error) 
 func filterHandler(w http.ResponseWriter, r *http.Request) {
 	podcastURL := r.URL.Query().Get("feed")
 	title := r.URL.Query().Get("title")
-	re := r.URL.Query().Get("re")
-	negative := r.URL.Query().Get("neg") == "true"
+	res := r.URL.Query()["re"]
+	negs := r.URL.Query()["neg"]
+	if len(negs) > 0 && len(res) != len(negs) {
+		http.Error(w, "Number of negs should be equal to REs, if not empty.", http.StatusBadRequest)
+		return
+	}
 
 	var feed *Podcast
 	feed, err := GetPodcasts(podcastURL)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, fmt.Errorf("can't fetch podcast feed: %w", err).Error(), http.StatusInternalServerError)
 		return
 	}
 
-	filteredItems, err := FilterPodcasts(feed, re, negative)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	items, err := feed.Channel.Items, nil
 
+	for i, re := range res {
+		negative := false
+		if len(negs) > 0 {
+			negative = negs[i] == "true"
+		}
+
+		items, err = FilterPodcasts(items, re, negative)
+		if err != nil {
+			http.Error(w, fmt.Errorf("can't filter feed: %w", err).Error(), http.StatusBadRequest)
+			return
+		}
+	}
 
 	if title != "" {
 		feed.Channel.Title = title
@@ -100,7 +112,7 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 		feed.Channel.Title = fmt.Sprintf("%s (filtered)", feed.Channel.Title)
 	}
 
-	feed.Channel.Items = filteredItems
+	feed.Channel.Items = items
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
