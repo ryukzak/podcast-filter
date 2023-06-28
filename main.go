@@ -91,6 +91,12 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if title == "" {
+		title = fmt.Sprintf("%s (filtered)", feed.Channel.Title)
+	}
+	log.Printf("%s -> %s\n", feed.Channel.Title, title)
+	feed.Channel.Title = title
+
 	items, err := feed.Channel.Items, nil
 
 	for i, re := range res {
@@ -99,17 +105,13 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 			negative = negs[i] == "true"
 		}
 
+		log.Printf("%s neg: %t re: %s\n", feed.Channel.Title, negative, re)
+
 		items, err = FilterPodcasts(items, re, negative)
 		if err != nil {
 			http.Error(w, fmt.Errorf("can't filter feed: %w", err).Error(), http.StatusBadRequest)
 			return
 		}
-	}
-
-	if title != "" {
-		feed.Channel.Title = title
-	} else {
-		feed.Channel.Title = fmt.Sprintf("%s (filtered)", feed.Channel.Title)
 	}
 
 	feed.Channel.Items = items
