@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 )
 
@@ -91,10 +92,13 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	base_url := os.Getenv("BASE_URL")
+	feed.Channel.Link = base_url + r.URL.String()
+
 	if title == "" {
 		title = fmt.Sprintf("%s (filtered)", feed.Channel.Title)
 	}
-	log.Printf("%s -> %s\n", feed.Channel.Title, title)
+	log.Printf("%s -> %s (%s)\n", feed.Channel.Title, title, r.URL)
 	feed.Channel.Title = title
 
 	items, err := feed.Channel.Items, nil
