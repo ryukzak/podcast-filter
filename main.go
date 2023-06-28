@@ -95,6 +95,8 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 	base_url := os.Getenv("BASE_URL")
 	feed.Channel.Link = base_url + r.URL.String()
 
+	feed.Channel.Descr = fmt.Sprintf("%s \n %s", r.URL, feed.Channel.Descr)
+
 	if title == "" {
 		title = fmt.Sprintf("%s (filtered)", feed.Channel.Title)
 	}
