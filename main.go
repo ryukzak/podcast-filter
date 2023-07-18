@@ -58,12 +58,7 @@ func GetPodcasts(podcastURL string) (*Podcast, error) {
 	return podcast, nil
 }
 
-func FilterPodcasts(items []Item, re string, negative bool) ([]Item, error) {
-	regex, err := regexp.Compile(re)
-	if err != nil {
-		return nil, err
-	}
-
+func FilterPodcasts(items []Item, regex *regexp.Regexp, negative bool) []Item {
 	filteredItems := make([]Item, 0)
 	for _, item := range items {
 		isMatch := regex.MatchString(item.Title)
@@ -71,8 +66,13 @@ func FilterPodcasts(items []Item, re string, negative bool) ([]Item, error) {
 			filteredItems = append(filteredItems, item)
 		}
 	}
+	return filteredItems
+}
 
-	return filteredItems, nil
+func logAndWriteErrorf(w http.ResponseWriter, code int, format string, a ...any) {
+	err := fmt.Errorf(format, a...)
+	log.Println(err)
+	http.Error(w, err.Error(), code)
 }
 
 func filterHandler(w http.ResponseWriter, r *http.Request) {
@@ -81,14 +81,14 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 	res := r.URL.Query()["re"]
 	negs := r.URL.Query()["neg"]
 	if len(negs) > 0 && len(res) != len(negs) {
-		http.Error(w, "Number of negs should be equal to REs, if not empty.", http.StatusBadRequest)
+		logAndWriteErrorf(w, http.StatusServiceUnavailable, "Number of negs should be equal to REs, if not empty.")
 		return
 	}
 
 	var feed *Podcast
 	feed, err := GetPodcasts(podcastURL)
 	if err != nil {
-		http.Error(w, fmt.Errorf("can't fetch podcast feed: %w", err).Error(), http.StatusInternalServerError)
+		logAndWriteErrorf(w, http.StatusUnprocessableEntity, "can't fetch origin podcast feed: %w", err)
 		return
 	}
 
@@ -100,10 +100,12 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = fmt.Sprintf("%s (filtered)", feed.Channel.Title)
 	}
-	log.Printf("%s -> %s (%s)\n", feed.Channel.Title, title, r.URL)
+	log.Printf("Change feed title: %s -> %s < %s >\n", feed.Channel.Title, title, r.URL)
 	feed.Channel.Title = title
 
 	items, err := feed.Channel.Items, nil
+
+	log.Printf("items before: %d\n", len(items))
 
 	for i, re := range res {
 		negative := false
@@ -111,14 +113,18 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 			negative = negs[i] == "true"
 		}
 
-		log.Printf("%s neg: %t re: %s\n", feed.Channel.Title, negative, re)
+		log.Printf("filter: %s neg: %t re: %s\n", feed.Channel.Title, negative, re)
 
-		items, err = FilterPodcasts(items, re, negative)
+		regex, err := regexp.Compile(re)
 		if err != nil {
-			http.Error(w, fmt.Errorf("can't filter feed: %w", err).Error(), http.StatusBadRequest)
+			logAndWriteErrorf(w, http.StatusUnprocessableEntity, "can't filter feed: %w", err)
 			return
 		}
+
+		items = FilterPodcasts(items, regex, negative)
 	}
+
+	log.Printf("items after: %d\n", len(items))
 
 	feed.Channel.Items = items
 
@@ -127,7 +133,9 @@ func filterHandler(w http.ResponseWriter, r *http.Request) {
 	enc := xml.NewEncoder(w)
 	enc.Indent("", "  ")
 	if err := enc.Encode(feed); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to encode filtered feed: %s", err.Error()), http.StatusInternalServerError)
+		err = fmt.Errorf("Failed to encode filtered feed: %w", err)
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 }

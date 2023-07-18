@@ -9,7 +9,7 @@ This microservice filters podcast feeds based on a provided regular expression.
 The easiest way to use the Podcast Filter is by pulling the Docker image and running it in a container:
 
 ``` shell
-docker run -p 8080:8080 -eBASE_URL=localhost:8080 ryukzak/podcast-filter
+docker run --name podcast-filter -p8080:8080 -eBASE_UR='localhost:8080' ryukzak/podcast-filter
 ```
 
 The server will start running inside the Docker container on port 8080.
@@ -34,6 +34,13 @@ It is possible to have a sequence of regular expressions. For example, you can s
 ``` http
 GET /filter?feed=https://feedmaster.umputun.com/rss/echo-msk&title=Эхо (часть)&re=(?i)(LIVE)&neg=true&re=(?i)(Шульман)&neg=false
 ```
+
+You can try service here: <http://podcast-filter.swampbuds.me>
+
+## Problems
+
+- First of all, test your URL using [HTTPie](https://httpie.io) or in a web browser.
+- Some podcast clients may truncate long feed URLs without displaying any useful alert or error messages. Unfortunately, manually requesting the feed can still work fine. In such cases, try limiting the URL size.
 
 ## Customization
 
