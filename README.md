@@ -18,7 +18,6 @@ The server will start running inside the Docker container on port 8080.
 
 To filter a podcast feed, you need to make an HTTP GET request to the /filter endpoint of the server with the following query parameters:
 
-
 - `feed`: The URL of the podcast feed.
 - `title`: (Optional) The title to be displayed for the filtered feed. If not provided, a default title will be used.
 - `re`: (Multiple parameters) Regular expression ([go regexp](https://pkg.go.dev/regexp)) to filter the podcast episodes.
