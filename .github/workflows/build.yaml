@@ -30,7 +30,7 @@ jobs:
           gofmt-flags: '-l -d'
 
       - name: Build Docker Image
-        run: docker build -t aleksandrpenskoi/rss-filter .
+        run: docker build -t aleksandrpenskoi/podcast-filter .
 
       - name: Log in to Container Registry
         uses: docker/login-action@v2
@@ -39,4 +39,4 @@ jobs:
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Push Docker Image
-        run: docker push aleksandrpenskoi/rss-filter
+        run: docker push aleksandrpenskoi/podcast-filter
