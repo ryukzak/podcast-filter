@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.20 AS builder
+FROM golang:1 AS builder
 
 WORKDIR /app
 
@@ -17,6 +17,10 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 COPY --from=builder /app/app .
+
+# Short links live in a bbolt file, so the data directory should be a volume.
+ENV DB_PATH=/data/podcast-filter.db
+VOLUME /data
 
 EXPOSE 8080
 

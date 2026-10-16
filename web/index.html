@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Podcast Filter</title>
+  <meta name="description" content="Filter a podcast RSS feed with regular expressions and build a ready-to-subscribe URL.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="masthead">
+  <h1>Podcast Filter</h1>
+  <p class="tagline">
+    Subscribe to a part of a podcast feed. Point the service at an RSS feed, describe which
+    episodes you want by their title, and get a URL your podcast client can subscribe to.
+  </p>
+</header>
+
+<main>
+  <section class="card how">
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li>
+        <strong>You give a feed and a few patterns.</strong> Every pattern is a
+        <a href="https://pkg.go.dev/regexp/syntax" target="_blank" rel="noreferrer">Go regular expression</a>
+        tested against the episode <em>title</em>.
+      </li>
+      <li>
+        <strong>Keep patterns are alternatives.</strong> An episode is in as soon as it matches
+        <em>any</em> one of them, so two patterns mean «either of these». With no keep pattern
+        at all, every episode is in.
+      </li>
+      <li>
+        <strong>Drop patterns are vetoes.</strong> An episode matching <em>any</em> drop pattern
+        is out, even if a keep pattern wanted it. Use them to carve exceptions out of what the
+        keep patterns let in.
+      </li>
+      <li>
+        <strong>You subscribe to the resulting URL.</strong> The service fetches the original feed
+        on every request, removes the episodes that did not survive, and serves the rest as a
+        normal RSS feed.
+      </li>
+    </ol>
+    <p class="note">
+      Patterns use RE2 syntax, which has no look-around but does take inline flags:
+      <code>(?i)</code> makes a pattern case-insensitive, so <code>(?i)shulman</code> matches
+      <code>Shulman</code> and <code>SHULMAN</code> alike. Unicode works as is —
+      <code>(?i)(Шульман)</code> is a perfectly good pattern.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>Start from an existing URL</h2>
+    <div class="field">
+      <div class="row">
+        <input id="import" type="text" spellcheck="false" autocomplete="off"
+               aria-label="An existing URL or link id to load"
+               placeholder="paste a feed URL, a /filter?… URL, or a link id">
+        <button id="import-btn" type="button" class="secondary">Load</button>
+      </div>
+      <p class="hint">
+        A filtered URL or a link id is loaded into the form below, so you can debug and change
+        it. A plain feed URL just fills in the feed field and keeps your filters.
+      </p>
+      <p id="import-status" class="status" hidden></p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Build a feed</h2>
+
+    <div class="field">
+      <label for="feed">Podcast RSS feed URL</label>
+      <input id="feed" type="url" spellcheck="false" autocomplete="off"
+             placeholder="https://example.com/podcast/rss">
+    </div>
+
+    <div class="field">
+      <label for="title">Title of the filtered feed <span class="optional">optional</span></label>
+      <input id="title" type="text" autocomplete="off" placeholder="defaults to «original title (filtered)»">
+    </div>
+
+    <div class="field">
+      <label>Filters</label>
+      <ul id="rules" class="rules"></ul>
+      <p id="rules-empty" class="hint">No filters yet — every episode passes through.</p>
+      <button id="add-rule" type="button" class="secondary">Add filter</button>
+    </div>
+  </section>
+
+
+  <section class="card preview">
+    <div class="row row-spread preview-head">
+      <h2>Preview</h2>
+      <div class="row preview-controls">
+        <p id="preview-summary" class="summary" aria-live="polite">Enter a feed URL to see its episodes.</p>
+        <div class="segmented" role="radiogroup" aria-label="Which episodes to show">
+          <label class="seg">
+            <input type="radio" name="view" value="all" checked>
+            <span>all</span>
+          </label>
+          <label class="seg">
+            <input type="radio" name="view" value="passing">
+            <span>only passing</span>
+          </label>
+          <label class="seg">
+            <input type="radio" name="view" value="removed">
+            <span>only removed</span>
+          </label>
+        </div>
+      </div>
+    </div>
+    <p id="preview-error" class="status error" hidden></p>
+    <ul id="items" class="items"></ul>
+    <p class="hint">
+      Green passes, red is removed. Click an episode to unroll its details and see which
+      pattern decided its fate. The list scrolls on its own and keeps its position while you
+      edit, so you can watch one specific episode react to a pattern — showing every episode
+      is what makes that possible, which is why it is the default. Drag the bottom edge of the
+      list to make it taller. Preview runs the same Go engine as the real feed.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>Your feed URL</h2>
+
+    <div class="field">
+      <div class="row row-spread">
+        <label for="inline-url">Direct URL — the filter travels inside the link</label>
+        <span id="inline-size" class="badge"></span>
+      </div>
+      <div class="row">
+        <input id="inline-url" type="text" readonly spellcheck="false" placeholder="…">
+        <button id="copy-inline" type="button" class="secondary">Copy</button>
+      </div>
+      <p id="inline-hint" class="hint"></p>
+    </div>
+
+    <div id="short-section" class="field">
+      <hr>
+      <label for="password">Short URL — the filter is stored on the server</label>
+      <p class="hint">
+        Useful when the direct URL grows too long: some podcast clients silently truncate long
+        URLs. Set a password if you want to be able to change the filter later without changing
+        the URL. Leave it empty and the link stays immutable forever. The password itself can
+        never be changed.
+      </p>
+      <div class="row">
+        <input id="password" type="password" autocomplete="new-password"
+               placeholder="password, optional">
+        <button id="create-short" type="button">Create short URL</button>
+      </div>
+      <p id="short-status" class="status" hidden></p>
+    </div>
+
+    <div id="stored-section" class="field" hidden>
+      <hr>
+      <label for="update-password">Stored filter <code id="stored-id"></code></label>
+      <div class="row">
+        <input id="update-url" type="text" readonly spellcheck="false">
+        <button id="copy-stored" type="button" class="secondary">Copy</button>
+      </div>
+      <p id="stored-hint" class="hint"></p>
+      <div id="update-row" class="row">
+        <input id="update-password" type="password" autocomplete="current-password"
+               placeholder="password used when the link was created">
+        <button id="update-short" type="button">Update this URL</button>
+      </div>
+      <p id="update-status" class="status" hidden></p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p>
+    <a href="https://github.com/ryukzak/podcast-filter" target="_blank" rel="noreferrer">Source on GitHub</a>
+    · BSD licensed
+  </p>
+</footer>
+
+<template id="item-template">
+  <li class="item">
+    <button type="button" class="item-line" aria-expanded="false">
+      <span class="item-bar" aria-hidden="true"></span>
+      <span class="item-caret" aria-hidden="true">&#9656;</span>
+      <span class="item-title"></span>
+      <span class="item-facts">
+        <span class="item-date"></span>
+        <span class="item-len"></span>
+        <span class="chips"></span>
+      </span>
+    </button>
+    <dl class="item-details" hidden></dl>
+  </li>
+</template>
+
+<template id="rule-template">
+  <li class="rule">
+    <div class="row rule-row">
+      <span class="rule-index"></span>
+      <select class="rule-mode" aria-label="What to do with matching episodes">
+        <option value="keep">keep if matching</option>
+        <option value="drop">drop if matching</option>
+      </select>
+      <input class="rule-re" type="text" spellcheck="false" autocomplete="off"
+             placeholder="(?i)(pattern)">
+      <button type="button" class="rule-remove ghost" aria-label="Remove filter">&times;</button>
+    </div>
+    <p class="rule-error status error" hidden></p>
+  </li>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>

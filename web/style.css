@@ -1,0 +1,390 @@
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --ink: #1b1f24;
+  --ink-soft: #5c6670;
+  --line: #dfe3e8;
+  --accent: #2f6feb;
+  --accent-ink: #ffffff;
+  --keep: #1a7f4b;
+  --keep-bg: #e7f6ed;
+  --dropped: #b4452c;
+  --dropped-bg: #fbeae5;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .05);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15181d;
+    --card: #1d2127;
+    --ink: #e7eaee;
+    --ink-soft: #99a3ad;
+    --line: #2e343c;
+    --accent: #5b8cf5;
+    --accent-ink: #0f1216;
+    --keep: #6fd79b;
+    --keep-bg: #16302280;
+    --dropped: #f09a82;
+    --dropped-bg: #3a1e1680;
+    --shadow: none;
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* .row sets display:flex, which would otherwise beat the user agent's
+   [hidden] rule and keep hidden rows visible. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  padding: 0 1rem 4rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.masthead, footer { max-width: 56rem; margin: 0 auto; }
+
+/* Cards sit in a comfortable reading column, but the preview earns the whole
+   window: one episode per line only pays off when the line is long. */
+.card { max-width: 56rem; margin: 0 auto 1.25rem; }
+.card.preview { max-width: 110rem; }
+
+.masthead { padding: 3rem 0 1.5rem; }
+.masthead h1 { margin: 0 0 .4rem; font-size: 2rem; letter-spacing: -.02em; }
+.tagline { margin: 0; max-width: 44rem; color: var(--ink-soft); }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+}
+
+.card h2 { margin: 0 0 1rem; font-size: 1.1rem; letter-spacing: -.01em; }
+
+hr { border: 0; border-top: 1px solid var(--line); margin: 1.25rem 0; }
+
+a { color: var(--accent); }
+
+code {
+  font-family: var(--mono);
+  font-size: .88em;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  padding: .1em .35em;
+  border-radius: 4px;
+}
+
+.steps { margin: 0; padding-left: 1.3rem; }
+.steps li { margin-bottom: .6rem; }
+.steps li:last-child { margin-bottom: 0; }
+.how .note { margin: 1rem 0 0; color: var(--ink-soft); font-size: .92rem; }
+
+.field { margin-bottom: 1.1rem; }
+.field:last-child { margin-bottom: 0; }
+
+label {
+  display: block;
+  margin-bottom: .4rem;
+  font-size: .85rem;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+.optional { font-weight: 400; color: var(--ink-soft); }
+
+.hint { margin: .4rem 0 0; color: var(--ink-soft); font-size: .85rem; }
+
+.row { display: flex; gap: .5rem; align-items: center; }
+.row-spread { justify-content: space-between; }
+.row > input { flex: 1 1 auto; min-width: 0; }
+
+input, select, button {
+  font: inherit;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  padding: .5rem .65rem;
+  background: var(--card);
+  color: var(--ink);
+}
+
+/* An input standing alone in a field spans the card; the ones paired with a
+   button stretch through .row > input instead. */
+.field > input { width: 100%; }
+
+input[type="url"], input[type="text"], .rule-re { font-family: var(--mono); font-size: .9rem; }
+input[readonly] { background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink-soft); }
+
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button {
+  cursor: pointer;
+  font-size: .88rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-ink);
+}
+
+button:hover:not(:disabled) { filter: brightness(1.07); }
+button:disabled { opacity: .5; cursor: default; }
+
+button.secondary { background: var(--card); color: var(--ink); border-color: var(--line); }
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-soft);
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: .25rem .5rem;
+}
+button.ghost:hover { color: var(--dropped); }
+
+.status { margin: .5rem 0 0; font-size: .85rem; }
+.status.error { color: var(--dropped); }
+.status.ok { color: var(--keep); }
+
+/* ---- filters ---- */
+
+.rules { list-style: none; margin: 0; padding: 0; }
+
+/* Sits under the list, lined up with the patterns rather than the numbers. */
+#add-rule { margin-top: .35rem; margin-left: 1.6rem; }
+.rule { margin-bottom: .5rem; }
+.rule-row { align-items: center; }
+.rule-index {
+  width: 1.6rem;
+  flex: 0 0 auto;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: .85rem;
+  color: var(--ink-soft);
+}
+.rule-mode { flex: 0 0 auto; }
+.rule-re { flex: 1 1 auto; min-width: 0; }
+.rule-error { padding-left: 1.6rem; }
+
+/* ---- preview ---- */
+
+.preview-head { align-items: baseline; margin-bottom: .75rem; }
+.preview-head h2 { margin: 0; }
+.preview-controls { gap: 1rem; align-items: baseline; }
+
+/* Segmented control. The radio itself is hidden rather than restyled, so the
+   label stays the click target and keyboard arrows still move between them. */
+.segmented {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.seg { margin: 0; font-weight: 400; }
+.seg input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.seg span {
+  display: block;
+  padding: .2rem .55rem;
+  border-radius: 6px;
+  font-size: .8rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.seg input:checked + span {
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .08);
+}
+
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Hiding with CSS rather than removing rows: the DOM stays intact, so the
+   row cache and the in-place patching keep working untouched. */
+.items.view-passing .item.dropped { display: none; }
+.items.view-removed .item:not(.dropped) { display: none; }
+.summary { margin: 0; color: var(--ink-soft); font-size: .85rem; font-variant-numeric: tabular-nums; }
+
+/* The list owns its own scrollbar so that editing a pattern never moves the
+   page, and rows keep a fixed height so the position does not drift either. */
+.items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  /* Tall by default, and resizable: no fixed height suits every screen, and
+     scanning a long feed is the whole point of the list. */
+  height: 70vh;
+  min-height: 10rem;
+  resize: vertical;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ink) 2%, transparent);
+}
+
+.items:empty::after {
+  content: "No episodes loaded yet.";
+  display: block;
+  padding: 1rem;
+  color: var(--ink-soft);
+  font-size: .9rem;
+}
+
+.item { border-bottom: 1px solid var(--line); }
+.item:last-child { border-bottom: 0; }
+
+/* The whole line is the toggle, so it has to shed every button default. */
+.item-line {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+  /* Tight rows: the point of the list is to scan a lot of episodes at once. */
+  padding: .18rem .7rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+}
+.item-line:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.item-line:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* The verdict carries no text, so the mark has to read at a glance: a stripe
+   as tall as the line it belongs to. */
+.item-bar {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: .6rem;
+  min-height: 1.15rem;
+  border-radius: 3px;
+  background: var(--keep);
+}
+.item.dropped .item-bar { background: var(--dropped); }
+
+.item-caret {
+  flex: 0 0 auto;
+  width: .6rem;
+  font-size: .62rem;
+  color: var(--ink-soft);
+  transition: transform .12s ease;
+}
+.item.open .item-caret { transform: rotate(90deg); }
+
+/* One line: the title takes the slack and clips, the facts keep their width. */
+.item-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: .84rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item.dropped .item-title { color: var(--ink-soft); }
+
+.item-facts {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  font-size: .74rem;
+  color: var(--ink-soft);
+}
+
+/* Fixed widths and tabular figures so the two columns line up down the list. */
+.item-date, .item-len {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+.item-date { min-width: 3.3rem; }
+.item-len { min-width: 3.1rem; }
+
+.chips { display: flex; gap: .25rem; }
+.chip {
+  min-width: 1.1rem;
+  text-align: center;
+  padding: 0 .2rem;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: .68rem;
+  line-height: 1.35;
+}
+.chip.matched { border-color: var(--keep); color: var(--keep); }
+.chip.culprit { background: var(--dropped-bg); border-color: var(--dropped); color: var(--dropped); }
+.chip.broken { border-style: dashed; opacity: .6; }
+/* None of the keep rules took the episode, so they share the blame. */
+.chip.unmet { border-color: var(--dropped); color: var(--dropped); }
+
+/* ---- unrolled details ---- */
+
+.item-details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: .3rem .9rem;
+  margin: 0;
+  padding: .2rem .7rem .8rem 2.3rem;
+  font-size: .82rem;
+}
+.item-details dt { color: var(--ink-soft); }
+.item-details dd { margin: 0; word-break: break-word; }
+.item-details dd.verdict-keep { color: var(--keep); }
+.item-details dd.verdict-drop { color: var(--dropped); }
+.item-details .rule-list { margin: 0; padding: 0; list-style: none; }
+.item-details .rule-list li { font-family: var(--mono); font-size: .78rem; }
+.item-details .rule-list li.matched { color: var(--keep); }
+.item-details .rule-list li.culprit { color: var(--dropped); font-weight: 600; }
+
+.badge {
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.badge.over { color: var(--dropped); font-weight: 600; }
+
+#short-section.recommended { outline: 2px solid var(--accent); outline-offset: .6rem; border-radius: 4px; }
+
+footer { margin-top: 2rem; text-align: center; color: var(--ink-soft); font-size: .85rem; }
+
+/* Not enough width for one line: the facts take a full row of their own, so
+   the mark, caret and title stay together on the first line. The title keeps
+   its ellipsis rather than wrapping, so a row is always exactly two lines. */
+@media (max-width: 60rem) {
+  .item-line { flex-wrap: wrap; row-gap: .1rem; }
+  .item-facts { width: 100%; padding-left: 1.4rem; }
+  .item-date, .item-len { min-width: 0; text-align: left; }
+  .item-details { padding-left: 1.5rem; }
+}
+
+@media (max-width: 40rem) {
+  .rule-row { flex-wrap: wrap; }
+  .rule-re { flex-basis: 100%; order: 3; }
+  .items { height: 60vh; }
+  .item-details { grid-template-columns: 1fr; gap: 0 0; }
+  .item-details dt { margin-top: .4rem; }
+}
