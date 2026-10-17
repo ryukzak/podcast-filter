@@ -230,3 +230,79 @@ func TestQueryLengthCountsEscaping(t *testing.T) {
 		t.Fatalf("escaped pattern is %d characters, want 42", got)
 	}
 }
+
+func TestApplyLengthBounds(t *testing.T) {
+	list := []Item{
+		{Title: "short", Duration: "10:00"},
+		{Title: "medium", Duration: "2700"},
+		{Title: "long", Duration: "2:00:00"},
+		{Title: "unknown"},
+		{Title: "garbage", Duration: "n/a"},
+	}
+	f := Filter{MinMinutes: 20, MaxMinutes: 90}
+	regexes, _ := f.Compile()
+
+	// An episode with no usable duration is not hidden by the bounds.
+	got := titles(f.Apply(list, regexes))
+	if want := []string{"medium", "unknown", "garbage"}; !equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+// The bounds are one more drop rule: a keep rule can't bring an episode back.
+func TestApplyLengthBoundsOverrideKeep(t *testing.T) {
+	list := []Item{{Title: "Шульман", Duration: "600"}, {Title: "Шульман", Duration: "3600"}}
+	f := Filter{Rules: []Rule{{Re: "Шульман"}}, MinMinutes: 30}
+	regexes, _ := f.Compile()
+
+	if got := f.Apply(list, regexes); len(got) != 1 || got[0].Duration != "3600" {
+		t.Fatalf("got %+v, want only the hour-long episode", got)
+	}
+}
+
+func TestLengthQueryRoundTrip(t *testing.T) {
+	original := Filter{Feed: "https://a", MinMinutes: 20, MaxMinutes: 90}
+	q := original.Query()
+	if q.Get("min") != "20" || q.Get("max") != "90" {
+		t.Fatalf("query = %v", q)
+	}
+
+	back, err := FilterFromQuery(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.MinMinutes != 20 || back.MaxMinutes != 90 {
+		t.Fatalf("back = %+v", back)
+	}
+
+	if _, has := (Filter{Feed: "https://a"}).Query()["min"]; has {
+		t.Fatal("unset bounds should stay out of the URL")
+	}
+}
+
+func TestFilterFromQueryBadMinutes(t *testing.T) {
+	q, _ := url.ParseQuery("feed=http://a&min=half")
+	if _, err := FilterFromQuery(q); err == nil {
+		t.Fatal("expected an error for a non-numeric min")
+	}
+}
+
+func TestValidateLength(t *testing.T) {
+	cases := []struct {
+		min, max int
+		valid    bool
+	}{
+		{0, 0, true},
+		{20, 0, true},
+		{0, 20, true},
+		{20, 20, true},
+		{30, 20, false},
+		{-1, 0, false},
+	}
+	for _, c := range cases {
+		f := Filter{MinMinutes: c.min, MaxMinutes: c.max}
+		if got := f.ValidateLength() == ""; got != c.valid {
+			t.Errorf("min %d max %d: valid = %t, want %t", c.min, c.max, got, c.valid)
+		}
+	}
+}

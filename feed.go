@@ -36,6 +36,10 @@ type Item struct {
 	Guid        string    `xml:"guid"`
 	PubDate     string    `xml:"pubDate"`
 	Author      string    `xml:"author"`
+
+	// Duration is itunes:duration, read through previewFeedItem. It is not
+	// encoded back, so the served feed keeps the shape it always had.
+	Duration string `xml:"-"`
 }
 
 type Enclosure struct {
@@ -114,6 +118,17 @@ func GetPodcasts(podcastURL string) (*Podcast, error) {
 	if err := xml.Unmarshal(raw, &podcast); err != nil {
 		return nil, err
 	}
+
+	// Both views decode the same channel/item list, so items line up by index.
+	details := &previewFeed{}
+	if err := xml.Unmarshal(raw, details); err != nil {
+		return nil, err
+	}
+	for i := range podcast.Channel.Items {
+		if i < len(details.Channel.Items) {
+			podcast.Channel.Items[i].Duration = details.Channel.Items[i].Duration
+		}
+	}
 	return podcast, nil
 }
 
@@ -173,19 +188,10 @@ func (c *feedCache) evictExpiredLocked() {
 // number of seconds or as h:mm:ss / m:ss.
 func formatDuration(raw string) string {
 	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
+	total, ok := parseDuration(raw)
+	if !ok {
+		return raw // Not a shape we know; show it as the feed wrote it.
 	}
-
-	total := 0
-	for _, part := range strings.Split(raw, ":") {
-		value, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil || value < 0 {
-			return raw // Not a shape we know; show it as the feed wrote it.
-		}
-		total = total*60 + value
-	}
-
 	if total <= 0 {
 		return ""
 	}
@@ -193,6 +199,24 @@ func formatDuration(raw string) string {
 		return fmt.Sprintf("%d:%02d:%02d", hours, (total/60)%60, total%60)
 	}
 	return fmt.Sprintf("%d:%02d", total/60, total%60)
+}
+
+// parseDuration reads itunes:duration into seconds. ok is false for a value
+// that is neither a number of seconds nor h:mm:ss / m:ss.
+func parseDuration(raw string) (seconds int, ok bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+
+	for _, part := range strings.Split(raw, ":") {
+		value, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || value < 0 {
+			return 0, false
+		}
+		seconds = seconds*60 + value
+	}
+	return seconds, true
 }
 
 // formatSize renders the enclosure length, which is a byte count. It stands in

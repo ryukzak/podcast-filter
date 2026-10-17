@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -20,10 +21,22 @@ type Filter struct {
 	Feed  string `json:"feed"`
 	Title string `json:"title"`
 	Rules []Rule `json:"rules"`
+
+	// MinMinutes and MaxMinutes bound the episode duration; zero means no
+	// bound. Episodes whose duration the feed does not publish always pass.
+	MinMinutes int `json:"minMinutes,omitempty"`
+	MaxMinutes int `json:"maxMinutes,omitempty"`
 }
 
+// Length verdicts, as reported by lengthVerdict and the preview.
+const (
+	lengthOK    = ""
+	lengthShort = "short"
+	lengthLong  = "long"
+)
+
 // FilterFromQuery reads the historical query format: feed, title, repeated re
-// and optional repeated neg.
+// and optional repeated neg, plus optional min and max in minutes.
 func FilterFromQuery(q url.Values) (Filter, error) {
 	res := q["re"]
 	negs := q["neg"]
@@ -44,7 +57,27 @@ func FilterFromQuery(q url.Values) (Filter, error) {
 		f.Rules = append(f.Rules, Rule{Re: re, Neg: negative})
 	}
 
+	var err error
+	if f.MinMinutes, err = queryMinutes(q, "min"); err != nil {
+		return Filter{}, err
+	}
+	if f.MaxMinutes, err = queryMinutes(q, "max"); err != nil {
+		return Filter{}, err
+	}
+
 	return f, nil
+}
+
+func queryMinutes(q url.Values, key string) (int, error) {
+	raw := q.Get(key)
+	if raw == "" {
+		return 0, nil
+	}
+	minutes, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s should be a number of minutes, got %q", key, raw)
+	}
+	return minutes, nil
 }
 
 // Query encodes the filter back into the query format understood by /filter.
@@ -71,6 +104,13 @@ func (f Filter) Query() url.Values {
 		}
 	}
 
+	if f.MinMinutes > 0 {
+		q.Set("min", strconv.Itoa(f.MinMinutes))
+	}
+	if f.MaxMinutes > 0 {
+		q.Set("max", strconv.Itoa(f.MaxMinutes))
+	}
+
 	return q
 }
 
@@ -89,6 +129,35 @@ func (f Filter) Validate() []string {
 		}
 	}
 	return errs
+}
+
+// ValidateLength reports a problem with the duration bounds, or "" if there is
+// none.
+func (f Filter) ValidateLength() string {
+	switch {
+	case f.MinMinutes < 0 || f.MaxMinutes < 0:
+		return "length bounds can't be negative"
+	case f.MinMinutes > 0 && f.MaxMinutes > 0 && f.MinMinutes > f.MaxMinutes:
+		return "minimum length is above the maximum"
+	}
+	return ""
+}
+
+// lengthVerdict tells whether an episode's itunes:duration is within the
+// bounds. An unknown duration passes: a missing field is no reason to hide an
+// episode.
+func (f Filter) lengthVerdict(duration string) string {
+	seconds, ok := parseDuration(duration)
+	if !ok || seconds <= 0 {
+		return lengthOK
+	}
+	if f.MinMinutes > 0 && seconds < f.MinMinutes*60 {
+		return lengthShort
+	}
+	if f.MaxMinutes > 0 && seconds > f.MaxMinutes*60 {
+		return lengthLong
+	}
+	return lengthOK
 }
 
 // Compile returns one regexp per rule. Rules that do not compile are reported
@@ -127,7 +196,12 @@ func (f Filter) Apply(items []Item, regexes []*regexp.Regexp) []Item {
 // other rule accepting the episode would overrule the exclusion.
 //
 // A filter with no keep rules keeps everything the drop rules do not remove.
+// The length bounds act like one more drop rule.
 func (f Filter) accepts(item Item, regexes []*regexp.Regexp) bool {
+	if f.lengthVerdict(item.Duration) != lengthOK {
+		return false
+	}
+
 	keepSeen, keepMatched := false, false
 
 	for i, regex := range regexes {

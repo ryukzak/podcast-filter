@@ -52,6 +52,7 @@ To filter a podcast feed, you need to make an HTTP GET request to the /filter en
 - `title`: (Optional) The title to be displayed for the filtered feed. If not provided, a default title will be used.
 - `re`: (Multiple parameters) Regular expression ([go regexp](https://pkg.go.dev/regexp)) to filter the podcast episodes. See [how the patterns combine](#how-the-patterns-combine).
 - `neg`: (Multiple parameters) Boolean value(s) indicating whether the corresponding regular expression pattern should be negated (i.e., exclude episodes matching the pattern). Default: false (if neg is used once, it should be used for all RE in the query).
+- `min`, `max`: (Optional) Episode length bounds in minutes, read from `itunes:duration`. Episodes outside them are dropped whatever the patterns say; episodes without a duration always pass.
 
 Example Request:
 
@@ -115,7 +116,7 @@ The builder is a plain client of these endpoints:
 | `GET /api/links/{id}` | The stored filter, and whether it can be updated. |
 | `PUT /api/links/{id}` | `{"filter": {...}, "password": "…"}` → replaces the stored filter. |
 
-A filter is `{"feed": "…", "title": "…", "rules": [{"re": "…", "neg": false}]}`.
+A filter is `{"feed": "…", "title": "…", "rules": [{"re": "…", "neg": false}], "minMinutes": 0, "maxMinutes": 0}`.
 
 ## Problems
 

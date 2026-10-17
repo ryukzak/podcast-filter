@@ -11,6 +11,9 @@ const el = {
   importStatus: $("import-status"),
   feed: $("feed"),
   title: $("title"),
+  minMinutes: $("min-minutes"),
+  maxMinutes: $("max-minutes"),
+  lengthError: $("length-error"),
   rules: $("rules"),
   rulesEmpty: $("rules-empty"),
   addRule: $("add-rule"),
@@ -65,11 +68,19 @@ function currentFilter() {
   return {
     feed: el.feed.value.trim(),
     title: el.title.value.trim(),
+    minMinutes: readMinutes(el.minMinutes),
+    maxMinutes: readMinutes(el.maxMinutes),
     rules: [...el.rules.querySelectorAll(".rule")].map((rule) => ({
       re: rule.querySelector(".rule-re").value,
       neg: rule.querySelector(".rule-mode").value === "drop",
     })),
   };
+}
+
+// readMinutes treats an empty or partial field as "no bound".
+function readMinutes(input) {
+  const value = Number.parseInt(input.value, 10);
+  return Number.isNaN(value) ? 0 : value;
 }
 
 // cleanFilter drops the rows the user has not filled in yet. The preview keeps
@@ -96,6 +107,8 @@ function buildInlineUrl(filter, path = "/filter") {
     params.append("re", rule.re);
     if (anyNegative) params.append("neg", String(rule.neg));
   }
+  if (filter.minMinutes > 0) params.set("min", String(filter.minMinutes));
+  if (filter.maxMinutes > 0) params.set("max", String(filter.maxMinutes));
 
   return `${location.origin}${path}?${params.toString()}`;
 }
@@ -183,6 +196,8 @@ async function runPreview() {
 
     el.previewError.hidden = true;
     showRuleErrors(data.ruleErrors);
+    if (data.lengthError) setStatus(el.lengthError, `${data.lengthError}, so it is ignored`, "error");
+    else el.lengthError.hidden = true;
     state.ruleErrors = data.ruleErrors || [];
     renderPreview(filter, data);
   } catch (err) {
@@ -230,6 +245,7 @@ function paintRow(row, item, filter) {
   if (!row) return;
 
   row.classList.toggle("dropped", !item.passed);
+  row.querySelector(".item-len").classList.toggle("culprit", Boolean(item.lengthVerdict));
   row.dataset.state = item.passed ? "passes" : "dropped";
   rowState.set(row, { item, filter });
 
@@ -243,7 +259,7 @@ function paintRow(row, item, filter) {
       chip.textContent = String(i + 1);
       chip.title = describeRule(filter.rules[i], i, matched, i === item.rejectedBy);
       // No keep rule matched, so they are collectively why it is out.
-      if (!item.passed && item.rejectedBy === -1 && !filter.rules[i].neg) {
+      if (!item.passed && !item.lengthVerdict && item.rejectedBy === -1 && !filter.rules[i].neg) {
         chip.classList.add("unmet");
       }
       return chip;
@@ -268,10 +284,10 @@ function renderDetails(row) {
   const details = row.querySelector(".item-details");
   details.replaceChildren();
 
-  addDetail(details, "Verdict", verdictText(item), item.passed ? "verdict-keep" : "verdict-drop");
+  addDetail(details, "Verdict", verdictText(item, filter), item.passed ? "verdict-keep" : "verdict-drop");
   addDetail(details, "Title", item.title || "(no title)");
   if (item.pubDate) addDetail(details, "Published", item.pubDate);
-  if (item.length) addDetail(details, "Length", item.length);
+  if (item.length) addDetail(details, "Length", item.length, item.lengthVerdict ? "verdict-drop" : "");
   if (item.author) addDetail(details, "Author", item.author);
   if (item.subtitle) addDetail(details, "About", item.subtitle);
 
@@ -306,8 +322,10 @@ function ruleIsUnused(index) {
 
 // An episode is out for one of two reasons: a drop filter excluded it, or no
 // keep filter ever took it.
-function verdictText(item) {
+function verdictText(item, filter) {
   if (item.passed) return "passes";
+  if (item.lengthVerdict === "short") return `shorter than ${filter.minMinutes} min`;
+  if (item.lengthVerdict === "long") return `longer than ${filter.maxMinutes} min`;
   if (item.rejectedBy >= 0) return `dropped by filter #${item.rejectedBy + 1}`;
   return "no keep filter matched it";
 }
@@ -506,7 +524,8 @@ function isPlainFeedURL(raw) {
   if (!/^https?:\/\//i.test(raw)) return false;
   try {
     const params = new URL(raw).searchParams;
-    return !params.get("feed") && params.getAll("re").length === 0;
+    return !params.get("feed") && params.getAll("re").length === 0 &&
+      !params.get("min") && !params.get("max");
   } catch {
     return false;
   }
@@ -541,6 +560,8 @@ function parseInlineFilter(raw) {
   return {
     feed: params.get("feed"),
     title: params.get("title") || "",
+    minMinutes: Number.parseInt(params.get("min"), 10) || 0,
+    maxMinutes: Number.parseInt(params.get("max"), 10) || 0,
     rules: res.map((re, i) => ({ re, neg: negs.length > 0 && negs[i] === "true" })),
   };
 }
@@ -548,6 +569,8 @@ function parseInlineFilter(raw) {
 function applyFilter(filter) {
   el.feed.value = filter.feed || "";
   el.title.value = filter.title || "";
+  el.minMinutes.value = filter.minMinutes || "";
+  el.maxMinutes.value = filter.maxMinutes || "";
   setRules(filter.rules || []);
   // A different feed means a different episode list, so drop the patching cache.
   reloadPreview();
@@ -613,6 +636,8 @@ function wire() {
 
   el.feed.addEventListener("input", onFilterChange);
   el.title.addEventListener("input", onFilterChange);
+  el.minMinutes.addEventListener("input", onFilterChange);
+  el.maxMinutes.addEventListener("input", onFilterChange);
 
   el.importBtn.addEventListener("click", importLink);
   el.importInput.addEventListener("keydown", (e) => {

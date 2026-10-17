@@ -443,3 +443,51 @@ func TestPreviewTruncatesLongFeed(t *testing.T) {
 		t.Fatalf("total = %d, kept = %d", resp.Total, resp.Kept)
 	}
 }
+
+// Item 0 is an hour long; the other two publish no duration and so pass.
+func TestPreviewLengthBounds(t *testing.T) {
+	env := newTestEnv(t)
+
+	rec := env.do(t, http.MethodPost, "/api/preview", previewRequest{Filter: Filter{
+		Feed:       env.origin.URL,
+		MaxMinutes: 30,
+	}})
+	resp := decode[previewResponse](t, rec)
+	if resp.Kept != 2 {
+		t.Fatalf("kept = %d, want 2", resp.Kept)
+	}
+	if item := resp.Items[0]; item.Passed || item.LengthVerdict != lengthLong {
+		t.Fatalf("item 0 = %+v, want dropped as too long", item)
+	}
+
+	// Inconsistent bounds are reported and ignored, like a broken pattern.
+	rec = env.do(t, http.MethodPost, "/api/preview", previewRequest{Filter: Filter{
+		Feed:       env.origin.URL,
+		MinMinutes: 90,
+		MaxMinutes: 30,
+	}})
+	resp = decode[previewResponse](t, rec)
+	if resp.LengthError == "" || resp.Kept != 3 {
+		t.Fatalf("lengthError = %q, kept = %d", resp.LengthError, resp.Kept)
+	}
+}
+
+func TestFilterHandlerLengthBounds(t *testing.T) {
+	env := newTestEnv(t)
+
+	filter := Filter{Feed: env.origin.URL, MaxMinutes: 30}
+	rec := env.do(t, http.MethodGet, "/filter?"+filter.Query().Encode(), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, body = %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "Шульман про всё") || !strings.Contains(body, "Кто-то другой") {
+		t.Fatalf("served feed = %s", body)
+	}
+
+	if rec := env.do(t, http.MethodPost, "/api/links", linkRequest{Filter: Filter{
+		Feed: env.origin.URL, MinMinutes: 90, MaxMinutes: 30,
+	}}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("create with min > max: code = %d", rec.Code)
+	}
+}

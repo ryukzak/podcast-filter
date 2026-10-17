@@ -101,6 +101,7 @@ label {
 .row { display: flex; gap: .5rem; align-items: center; }
 .row-spread { justify-content: space-between; }
 .row > input { flex: 1 1 auto; min-width: 0; }
+.length-row > input { flex: 0 1 7rem; font-family: var(--mono); font-size: .9rem; }
 
 input, select, button {
   font: inherit;
@@ -322,6 +323,7 @@ button.ghost:hover { color: var(--dropped); }
 }
 .item-date { min-width: 3.3rem; }
 .item-len { min-width: 3.1rem; }
+.item-len.culprit { color: var(--dropped); font-weight: 600; }
 
 .chips { display: flex; gap: .25rem; }
 .chip {

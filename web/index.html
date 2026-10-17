@@ -82,6 +82,22 @@
     </div>
 
     <div class="field">
+      <label for="min-minutes">Episode length, minutes <span class="optional">optional</span></label>
+      <div class="row length-row">
+        <input id="min-minutes" type="number" min="0" step="1" inputmode="numeric"
+               aria-label="Minimum length in minutes" placeholder="from">
+        <span aria-hidden="true">–</span>
+        <input id="max-minutes" type="number" min="0" step="1" inputmode="numeric"
+               aria-label="Maximum length in minutes" placeholder="to">
+      </div>
+      <p class="hint">
+        Drops episodes shorter or longer than this, whatever the filters below say. Episodes
+        whose feed does not publish a duration always pass.
+      </p>
+      <p id="length-error" class="status error" hidden></p>
+    </div>
+
+    <div class="field">
       <label>Filters</label>
       <ul id="rules" class="rules"></ul>
       <p id="rules-empty" class="hint">No filters yet — every episode passes through.</p>

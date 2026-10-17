@@ -42,15 +42,20 @@ type previewItem struct {
 	Matches    []bool `json:"matches"`
 	Passed     bool   `json:"passed"`
 	RejectedBy int    `json:"rejectedBy"`
+	// LengthVerdict is "short" or "long" when the duration bounds drop the
+	// episode, and empty otherwise.
+	LengthVerdict string `json:"lengthVerdict"`
 }
 
 type previewResponse struct {
-	FeedTitle  string        `json:"feedTitle"`
-	Total      int           `json:"total"`
-	Kept       int           `json:"kept"`
-	Truncated  bool          `json:"truncated"`
-	RuleErrors []string      `json:"ruleErrors"`
-	Items      []previewItem `json:"items"`
+	FeedTitle  string   `json:"feedTitle"`
+	Total      int      `json:"total"`
+	Kept       int      `json:"kept"`
+	Truncated  bool     `json:"truncated"`
+	RuleErrors []string `json:"ruleErrors"`
+	// LengthError explains why the duration bounds are ignored, if they are.
+	LengthError string        `json:"lengthError"`
+	Items       []previewItem `json:"items"`
 }
 
 type linkRequest struct {
@@ -111,23 +116,32 @@ func buildPreview(filter Filter, feed *previewFeed) previewResponse {
 		regexes[i] = regexp.MustCompile(rule.Re)
 	}
 
+	// Inconsistent bounds are ignored the same way a broken pattern is.
+	lengthFilter := filter
+	lengthError := filter.ValidateLength()
+	if lengthError != "" {
+		lengthFilter.MinMinutes, lengthFilter.MaxMinutes = 0, 0
+	}
+
 	resp := previewResponse{
-		FeedTitle:  feed.Channel.Title,
-		Total:      len(feed.Channel.Items),
-		RuleErrors: ruleErrors,
-		Items:      make([]previewItem, 0, min(len(feed.Channel.Items), maxPreviewItems)),
+		FeedTitle:   feed.Channel.Title,
+		Total:       len(feed.Channel.Items),
+		RuleErrors:  ruleErrors,
+		LengthError: lengthError,
+		Items:       make([]previewItem, 0, min(len(feed.Channel.Items), maxPreviewItems)),
 	}
 
 	for _, item := range feed.Channel.Items {
 		preview := previewItem{
-			Title:      item.Title,
-			Link:       item.Link,
-			PubDate:    item.PubDate,
-			Length:     itemLength(item),
-			Author:     item.Author,
-			Subtitle:   itemSubtitle(item),
-			Matches:    make([]bool, len(filter.Rules)),
-			RejectedBy: -1,
+			Title:         item.Title,
+			Link:          item.Link,
+			PubDate:       item.PubDate,
+			Length:        itemLength(item),
+			Author:        item.Author,
+			Subtitle:      itemSubtitle(item),
+			Matches:       make([]bool, len(filter.Rules)),
+			RejectedBy:    -1,
+			LengthVerdict: lengthFilter.lengthVerdict(item.Duration),
 		}
 
 		// Mirrors Filter.accepts, but records why the episode is out: either a
@@ -149,7 +163,8 @@ func buildPreview(filter Filter, feed *previewFeed) previewResponse {
 			keepSeen = true
 			keepMatched = keepMatched || matched
 		}
-		preview.Passed = preview.RejectedBy == -1 && (!keepSeen || keepMatched)
+		preview.Passed = preview.LengthVerdict == lengthOK &&
+			preview.RejectedBy == -1 && (!keepSeen || keepMatched)
 
 		if preview.Passed {
 			resp.Kept++
@@ -289,6 +304,9 @@ func writeLinkError(w http.ResponseWriter, err error) {
 func validateFilter(filter Filter) error {
 	if err := validateFeedURL(filter.Feed); err != nil {
 		return err
+	}
+	if problem := filter.ValidateLength(); problem != "" {
+		return errors.New(problem)
 	}
 	for i, problem := range filter.Validate() {
 		if problem != "" {
