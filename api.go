@@ -92,7 +92,7 @@ func (s *server) previewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	feed, err := s.cache.Get(req.Filter.Feed)
+	feed, err := s.cache.Get(r.Context(), req.Filter.Feed)
 	if err != nil {
 		log.Printf("preview: can't fetch %s: %v\n", req.Filter.Feed, err)
 		writeJSONError(w, http.StatusUnprocessableEntity,

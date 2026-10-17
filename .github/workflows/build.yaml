@@ -1,12 +1,14 @@
-name: Build and Push Docker Image
+name: CI
 
 on:
   push:
     branches:
       - main
+  pull_request:
 
 jobs:
-  build:
+  go:
+    name: Go
     runs-on: ubuntu-latest
 
     steps:
@@ -21,16 +23,37 @@ jobs:
       - name: Test
         run: go test ./...
 
-      # - name: golangci-lint
-      #   uses: golangci/golangci-lint-action@v6
-      #   with:
-      #     version: latest
-
-      - name: gofmt
-        uses: Jerome1337/gofmt-action@v1.0.5
+      # Runs the linters and the gofmt/goimports checks from .golangci.yml.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
         with:
-          gofmt-path: './'
-          gofmt-flags: '-l -d'
+          version: v2.15.0
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Biome
+        uses: biomejs/setup-biome@v2
+        with:
+          version: 2.5.15
+
+      - name: Biome
+        run: biome ci .
+
+  docker:
+    name: Docker image
+    needs: [go, web]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4

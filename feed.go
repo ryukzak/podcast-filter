@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -87,9 +88,10 @@ const (
 var feedClient = &http.Client{Timeout: fetchTimeout}
 
 // fetchFeed returns the raw XML, so that the same bytes can be decoded into
-// whichever view the caller needs.
-func fetchFeed(podcastURL string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodGet, podcastURL, nil)
+// whichever view the caller needs. The fetch stops when ctx is done, so a
+// client that hangs up does not leave a slow origin request running.
+func fetchFeed(ctx context.Context, podcastURL string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, podcastURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -108,8 +110,8 @@ func fetchFeed(podcastURL string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, maxFeedSize))
 }
 
-func GetPodcasts(podcastURL string) (*Podcast, error) {
-	raw, err := fetchFeed(podcastURL)
+func GetPodcasts(ctx context.Context, podcastURL string) (*Podcast, error) {
+	raw, err := fetchFeed(ctx, podcastURL)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +151,7 @@ func newFeedCache() *feedCache {
 	return &feedCache{entries: make(map[string]feedCacheEntry)}
 }
 
-func (c *feedCache) Get(podcastURL string) (*previewFeed, error) {
+func (c *feedCache) Get(ctx context.Context, podcastURL string) (*previewFeed, error) {
 	c.mu.Lock()
 	entry, ok := c.entries[podcastURL]
 	c.mu.Unlock()
@@ -158,7 +160,7 @@ func (c *feedCache) Get(podcastURL string) (*previewFeed, error) {
 		return entry.feed, nil
 	}
 
-	raw, err := fetchFeed(podcastURL)
+	raw, err := fetchFeed(ctx, podcastURL)
 	if err != nil {
 		return nil, err
 	}

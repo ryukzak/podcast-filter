@@ -49,7 +49,7 @@ func (s *server) filterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	feed, err := GetPodcasts(filter.Feed)
+	feed, err := GetPodcasts(r.Context(), filter.Feed)
 	if err != nil {
 		logAndWriteErrorf(w, http.StatusUnprocessableEntity, "can't fetch origin podcast feed: %w", err)
 		return
@@ -122,9 +122,17 @@ func env(name, fallback string) string {
 }
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// run lives apart from main so that its deferred store.Close still runs when
+// the server fails to start; log.Fatal would skip it.
+func run() error {
 	store, err := OpenStore(env("DB_PATH", "podcast-filter.db"))
 	if err != nil {
-		log.Fatalf("can't open the link store: %v", err)
+		return fmt.Errorf("can't open the link store: %w", err)
 	}
 	defer func() {
 		// A failure here means the bbolt file may not have been flushed.
@@ -165,7 +173,8 @@ func main() {
 
 	log.Printf("Starting server on %s...\n", addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+		return err
 	}
 	<-idle
+	return nil
 }

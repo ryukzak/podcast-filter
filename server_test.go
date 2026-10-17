@@ -71,7 +71,7 @@ func (e *testEnv) do(t *testing.T, method, path string, body any) *httptest.Resp
 		reader = strings.NewReader(string(raw))
 	}
 
-	req := httptest.NewRequest(method, path, reader)
+	req := httptest.NewRequestWithContext(t.Context(), method, path, reader)
 	rec := httptest.NewRecorder()
 	e.mux.ServeHTTP(rec, req)
 	return rec

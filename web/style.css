@@ -35,6 +35,7 @@
 
 /* .row sets display:flex, which would otherwise beat the user agent's
    [hidden] rule and keep hidden rows visible. */
+/* biome-ignore lint/complexity/noImportantStyles: [hidden] has to win over any display rule */
 [hidden] { display: none !important; }
 
 body {
@@ -86,8 +87,9 @@ code {
 .field { margin-bottom: 1.1rem; }
 .field:last-child { margin-bottom: 0; }
 
-label {
+label, .field-label {
   display: block;
+  margin-top: 0;
   margin-bottom: .4rem;
   font-size: .85rem;
   font-weight: 600;
@@ -100,9 +102,6 @@ label {
 
 .row { display: flex; gap: .5rem; align-items: center; }
 .row-spread { justify-content: space-between; }
-.row > input { flex: 1 1 auto; min-width: 0; }
-.length-row > input { flex: 0 1 7rem; font-family: var(--mono); font-size: .9rem; }
-
 input, select, button {
   font: inherit;
   border-radius: 8px;
@@ -111,6 +110,9 @@ input, select, button {
   background: var(--card);
   color: var(--ink);
 }
+
+.row > input { flex: 1 1 auto; min-width: 0; }
+.length-row > input { flex: 0 1 7rem; font-family: var(--mono); font-size: .9rem; }
 
 /* An input standing alone in a field spans the card; the ones paired with a
    button stretch through .row > input instead. */

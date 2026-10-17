@@ -1,5 +1,11 @@
 # Podcast Filter
 
+[![CI](https://github.com/ryukzak/podcast-filter/actions/workflows/build.yaml/badge.svg)](https://github.com/ryukzak/podcast-filter/actions/workflows/build.yaml)
+[![Go version](https://img.shields.io/github/go-mod/go-version/ryukzak/podcast-filter)](go.mod)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ryukzak/podcast-filter)](https://goreportcard.com/report/github.com/ryukzak/podcast-filter)
+[![Docker Image](https://img.shields.io/docker/image-size/ryukzak/podcast-filter/latest?label=docker)](https://hub.docker.com/r/ryukzak/podcast-filter)
+[![License](https://img.shields.io/github/license/ryukzak/podcast-filter)](LICENSE)
+
 This microservice filters podcast feeds based on provided regular expressions.
 
 Open the service in a browser and you get a builder: paste a feed URL, write the
@@ -142,6 +148,13 @@ go run .
 
 The builder's assets live in `web/` and are embedded into the binary, so the
 build has no separate frontend step.
+
+CI also runs the linters; run them locally with:
+
+``` shell
+golangci-lint run ./...          # Go, configured in .golangci.yml
+npx @biomejs/biome ci .          # web/, configured in biome.json
+```
 
 ## Contributing
 

@@ -98,8 +98,8 @@
     </div>
 
     <div class="field">
-      <label>Filters</label>
-      <ul id="rules" class="rules"></ul>
+      <p id="rules-label" class="field-label">Filters</p>
+      <ul id="rules" class="rules" aria-labelledby="rules-label"></ul>
       <p id="rules-empty" class="hint">No filters yet — every episode passes through.</p>
       <button id="add-rule" type="button" class="secondary">Add filter</button>
     </div>
@@ -151,7 +151,7 @@
         <button id="copy-inline" type="button" class="secondary">Copy</button>
       </div>
       <p id="inline-hint" class="hint"></p>
-      <p class="hint" hidden><a id="inline-edit">Open this filter in the builder</a> — bookmark it to come back later.</p>
+      <p class="hint" hidden><a id="inline-edit" href="/">Open this filter in the builder</a> — bookmark it to come back later.</p>
     </div>
 
     <div id="short-section" class="field">
@@ -179,7 +179,7 @@
         <button id="copy-stored" type="button" class="secondary">Copy</button>
       </div>
       <p id="stored-hint" class="hint"></p>
-      <p class="hint"><a id="stored-edit">Open this stored filter in the builder</a> — bookmark it to come back and update it.</p>
+      <p class="hint"><a id="stored-edit" href="/">Open this stored filter in the builder</a> — bookmark it to come back and update it.</p>
       <div id="update-row" class="row">
         <input id="update-password" type="password" autocomplete="current-password"
                placeholder="password used when the link was created">

@@ -196,8 +196,11 @@ async function runPreview() {
 
     el.previewError.hidden = true;
     showRuleErrors(data.ruleErrors);
-    if (data.lengthError) setStatus(el.lengthError, `${data.lengthError}, so it is ignored`, "error");
-    else el.lengthError.hidden = true;
+    if (data.lengthError) {
+      setStatus(el.lengthError, `${data.lengthError}, so it is ignored`, "error");
+    } else {
+      el.lengthError.hidden = true;
+    }
     state.ruleErrors = data.ruleErrors || [];
     renderPreview(filter, data);
   } catch (err) {
@@ -225,7 +228,9 @@ function renderPreview(filter, data) {
   // Patching in place is what keeps the scroll position pinned while the user
   // edits a pattern: nothing is detached and no row changes height.
   const rows = el.items.children;
-  data.items.forEach((item, i) => paintRow(rows[i], item, filter));
+  data.items.forEach((item, i) => {
+    paintRow(rows[i], item, filter);
+  });
 }
 
 function buildRow(item) {
@@ -284,10 +289,16 @@ function renderDetails(row) {
   const details = row.querySelector(".item-details");
   details.replaceChildren();
 
-  addDetail(details, "Verdict", verdictText(item, filter), item.passed ? "verdict-keep" : "verdict-drop");
+  addDetail(
+    details,
+    "Verdict",
+    verdictText(item, filter),
+    item.passed ? "verdict-keep" : "verdict-drop",
+  );
   addDetail(details, "Title", item.title || "(no title)");
   if (item.pubDate) addDetail(details, "Published", item.pubDate);
-  if (item.length) addDetail(details, "Length", item.length, item.lengthVerdict ? "verdict-drop" : "");
+  if (item.length)
+    addDetail(details, "Length", item.length, item.lengthVerdict ? "verdict-drop" : "");
   if (item.author) addDetail(details, "Author", item.author);
   if (item.subtitle) addDetail(details, "About", item.subtitle);
 
@@ -524,8 +535,12 @@ function isPlainFeedURL(raw) {
   if (!/^https?:\/\//i.test(raw)) return false;
   try {
     const params = new URL(raw).searchParams;
-    return !params.get("feed") && params.getAll("re").length === 0 &&
-      !params.get("min") && !params.get("max");
+    return (
+      !params.get("feed") &&
+      params.getAll("re").length === 0 &&
+      !params.get("min") &&
+      !params.get("max")
+    );
   } catch {
     return false;
   }
