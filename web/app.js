@@ -22,6 +22,7 @@ const el = {
   inlineSize: $("inline-size"),
   inlineHint: $("inline-hint"),
   copyInline: $("copy-inline"),
+  inlineEdit: $("inline-edit"),
   shortSection: $("short-section"),
   password: $("password"),
   createShort: $("create-short"),
@@ -31,6 +32,7 @@ const el = {
   storedHint: $("stored-hint"),
   updateUrl: $("update-url"),
   copyStored: $("copy-stored"),
+  storedEdit: $("stored-edit"),
   updateRow: $("update-row"),
   updatePassword: $("update-password"),
   updateShort: $("update-short"),
@@ -82,8 +84,9 @@ function cleanFilter() {
 
 // buildInlineUrl produces the same query layout as the server: neg is emitted
 // for every rule or for none. The returned string is fully percent-encoded, so
-// its length is the length a podcast client will actually see.
-function buildInlineUrl(filter) {
+// its length is the length a podcast client will actually see. With path "/"
+// the same query opens the builder with this filter loaded.
+function buildInlineUrl(filter, path = "/filter") {
   const params = new URLSearchParams();
   params.set("feed", filter.feed);
   if (filter.title) params.set("title", filter.title);
@@ -94,7 +97,7 @@ function buildInlineUrl(filter) {
     if (anyNegative) params.append("neg", String(rule.neg));
   }
 
-  return `${location.origin}/filter?${params.toString()}`;
+  return `${location.origin}${path}?${params.toString()}`;
 }
 
 /* ---------- rules ---------- */
@@ -346,7 +349,19 @@ function formatDate(pubDate) {
 
 /* ---------- result URLs ---------- */
 
+// syncPageUrl keeps the address bar on the builder link for what is on the
+// screen, so a reload or a bookmark comes back to it. A stored link keeps its
+// id while it is loaded, since that is what the update form works on.
+function syncPageUrl() {
+  const filter = cleanFilter();
+  let url = `${location.origin}/`;
+  if (state.stored) url += `?${new URLSearchParams({ id: state.stored.id })}`;
+  else if (filter.feed) url = buildInlineUrl(filter, "/");
+  if (url !== location.href) history.replaceState(null, "", url);
+}
+
 function updateUrls() {
+  syncPageUrl();
   const filter = cleanFilter();
 
   if (!filter.feed) {
@@ -354,6 +369,7 @@ function updateUrls() {
     el.inlineSize.textContent = "";
     el.inlineSize.classList.remove("over");
     el.inlineHint.textContent = "Enter a feed URL first.";
+    el.inlineEdit.parentElement.hidden = true;
     el.shortSection.classList.remove("recommended");
     el.createShort.disabled = true;
     return;
@@ -369,16 +385,21 @@ function updateUrls() {
     ? "This URL is longer than most podcast clients handle reliably — use a short URL below instead."
     : "Short enough to paste straight into a podcast client. No server-side state involved.";
 
+  el.inlineEdit.href = buildInlineUrl(filter, "/");
+  el.inlineEdit.parentElement.hidden = false;
+
   el.shortSection.classList.toggle("recommended", tooLong);
   el.createShort.disabled = false;
 }
 
 function showStored(link, note, kind) {
   state.stored = { id: link.id, mutable: link.mutable };
+  syncPageUrl();
 
   el.storedSection.hidden = false;
   el.storedId.textContent = link.id;
   el.updateUrl.value = location.origin + link.path;
+  el.storedEdit.href = `${location.origin}/?${new URLSearchParams({ id: link.id })}`;
   el.updateRow.hidden = !link.mutable;
   el.storedHint.textContent = link.mutable
     ? "Password protected: edit the filter above and press «Update this URL» to change what this URL serves."
@@ -441,6 +462,10 @@ async function importLink() {
   const raw = el.importInput.value.trim();
   if (!raw) return;
 
+  if (await loadFrom(raw)) el.importInput.value = "";
+}
+
+async function loadFrom(raw) {
   try {
     const id = extractLinkID(raw);
     if (id) {
@@ -454,15 +479,26 @@ async function importLink() {
       reloadPreview();
       setStatus(el.importStatus, "Loaded the feed URL — your filters were kept.", "ok");
     } else {
-      applyFilter(parseInlineFilter(raw));
+      const filter = parseInlineFilter(raw);
       el.storedSection.hidden = true;
       state.stored = null;
+      applyFilter(filter);
       setStatus(el.importStatus, "Loaded the filter from the URL.", "ok");
     }
-    el.importInput.value = "";
+    return true;
   } catch (err) {
     setStatus(el.importStatus, err.message, "error");
+    return false;
   }
+}
+
+// loadFromPageURL opens the builder on the filter in the page's own query:
+// /?id=<guid> for a stored link, or /?feed=…&re=… for an inline one.
+async function loadFromPageURL() {
+  const params = new URLSearchParams(location.search);
+  if (!params.get("id") && !params.get("feed")) return false;
+  await loadFrom(location.href);
+  return true;
 }
 
 // A URL with no filter in it is an origin feed, not a filtered feed.
@@ -598,6 +634,7 @@ function wire() {
 async function main() {
   wire();
   await loadConfig();
+  if (await loadFromPageURL()) return;
   // Start with one empty filter so the shape of the form is obvious.
   addRule();
   updateUrls();

@@ -59,7 +59,8 @@
         <button id="import-btn" type="button" class="secondary">Load</button>
       </div>
       <p class="hint">
-        A filtered URL or a link id is loaded into the form below, so you can debug and change
+        You can also open <code>/?id=&lt;link id&gt;</code> or <code>/?feed=…&amp;re=…</code>
+        directly. A filtered URL or a link id is loaded into the form below, so you can debug and change
         it. A plain feed URL just fills in the feed field and keeps your filters.
       </p>
       <p id="import-status" class="status" hidden></p>
@@ -134,6 +135,7 @@
         <button id="copy-inline" type="button" class="secondary">Copy</button>
       </div>
       <p id="inline-hint" class="hint"></p>
+      <p class="hint" hidden><a id="inline-edit">Open this filter in the builder</a> — bookmark it to come back later.</p>
     </div>
 
     <div id="short-section" class="field">
@@ -161,6 +163,7 @@
         <button id="copy-stored" type="button" class="secondary">Copy</button>
       </div>
       <p id="stored-hint" class="hint"></p>
+      <p class="hint"><a id="stored-edit">Open this stored filter in the builder</a> — bookmark it to come back and update it.</p>
       <div id="update-row" class="row">
         <input id="update-password" type="password" autocomplete="current-password"
                placeholder="password used when the link was created">
