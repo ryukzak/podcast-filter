@@ -4,11 +4,15 @@ const $ = (id) => document.getElementById(id);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEBOUNCE_MS = 350;
+const RECENT_KEY = "podcast-filter:recent";
+const RECENT_LIMIT = 10;
 
 const el = {
   importInput: $("import"),
   importBtn: $("import-btn"),
   importStatus: $("import-status"),
+  recentSection: $("recent-section"),
+  recent: $("recent"),
   feed: $("feed"),
   title: $("title"),
   minMinutes: $("min-minutes"),
@@ -42,6 +46,7 @@ const el = {
   updateStatus: $("update-status"),
   ruleTemplate: $("rule-template"),
   itemTemplate: $("item-template"),
+  recentTemplate: $("recent-template"),
 };
 
 const state = {
@@ -53,6 +58,8 @@ const state = {
   // What the preview list currently shows, so that a filter edit patches the
   // existing rows instead of rebuilding (and so resetting) the scroll box.
   rendered: { feed: null, titles: [] },
+  // The origin feed's own title from the last preview, to label recent links.
+  feedTitle: { feed: null, title: "" },
 };
 
 // Latest item/filter per row, so an open detail panel can be rebuilt on a
@@ -202,6 +209,7 @@ async function runPreview() {
       el.lengthError.hidden = true;
     }
     state.ruleErrors = data.ruleErrors || [];
+    noteFeedTitle(filter.feed, data.feedTitle);
     renderPreview(filter, data);
   } catch (err) {
     if (err.name === "AbortError") return;
@@ -449,6 +457,7 @@ async function createShortUrl() {
     el.password.value = "";
     el.shortStatus.hidden = true;
     showStored(link, "Short URL created.", "ok");
+    rememberLink({ id: link.id, filter });
     el.updateUrl.scrollIntoView({ behavior: "smooth", block: "center" });
   } catch (err) {
     setStatus(el.shortStatus, err.message, "error");
@@ -458,13 +467,15 @@ async function createShortUrl() {
 }
 
 async function updateShortUrl() {
+  const filter = cleanFilter();
   el.updateShort.disabled = true;
   try {
     const link = await callLinkAPI(`/api/links/${encodeURIComponent(state.stored.id)}`, "PUT", {
-      filter: cleanFilter(),
+      filter,
       password: el.updatePassword.value,
     });
     showStored(link, `Updated — this URL now serves the filter above.`, "ok");
+    rememberLink({ id: link.id, filter });
   } catch (err) {
     setStatus(el.updateStatus, err.message, "error");
   } finally {
@@ -501,6 +512,7 @@ async function loadFrom(raw) {
       const link = await callLinkAPI(`/api/links/${encodeURIComponent(id)}`, "GET", undefined);
       applyFilter(link.filter);
       showStored(link, null);
+      rememberLink({ id: link.id, filter: link.filter });
       setStatus(el.importStatus, `Loaded stored filter ${link.id}.`, "ok");
     } else if (isPlainFeedURL(raw)) {
       // Nothing to import, so keep whatever filters are already in the form.
@@ -512,6 +524,7 @@ async function loadFrom(raw) {
       el.storedSection.hidden = true;
       state.stored = null;
       applyFilter(filter);
+      rememberLink({ filter });
       setStatus(el.importStatus, "Loaded the filter from the URL.", "ok");
     }
     return true;
@@ -600,6 +613,122 @@ function reloadPreview() {
   runPreview();
 }
 
+/* ---------- recently used links ---------- */
+
+// The history is a convenience, so storage that is missing, full or holds
+// something unexpected just means an empty list.
+function loadRecent() {
+  try {
+    const entries = JSON.parse(localStorage.getItem(RECENT_KEY));
+    if (!Array.isArray(entries)) return [];
+    return entries.filter(
+      (entry) => typeof entry?.filter?.feed === "string" && Array.isArray(entry.filter.rules),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveRecent(entries) {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(entries));
+  } catch {
+    // Private mode or a full quota: the list just is not kept.
+  }
+  renderRecent();
+}
+
+// recentHref is the builder link an entry opens, and doubles as its identity:
+// a stored link is the same link whatever it serves, an inline one is its filter.
+function recentHref(entry) {
+  if (entry.id) return `${location.origin}/?${new URLSearchParams({ id: entry.id })}`;
+  return buildInlineUrl(entry.filter, "/");
+}
+
+// rememberLink moves a link to the top of the list. A stored link keeps the
+// filter it was last seen with, which is only used to describe it.
+function rememberLink({ id = null, filter }) {
+  const entry = {
+    id,
+    // A stored filter comes from Go, which sends no rules as null.
+    filter: { ...filter, rules: filter.rules || [] },
+    feedTitle: "",
+    usedAt: new Date().toISOString(),
+  };
+  const href = recentHref(entry);
+  const entries = loadRecent();
+  const previous = entries.find((other) => recentHref(other) === href);
+
+  entry.feedTitle =
+    (state.feedTitle.feed === filter.feed && state.feedTitle.title) || previous?.feedTitle || "";
+  saveRecent([entry, ...entries.filter((other) => other !== previous)].slice(0, RECENT_LIMIT));
+}
+
+function forgetLink(href) {
+  saveRecent(loadRecent().filter((entry) => recentHref(entry) !== href));
+}
+
+// noteFeedTitle names the recent links of a feed after it, which is only known
+// once a preview has fetched the feed.
+function noteFeedTitle(feed, title) {
+  state.feedTitle = { feed, title };
+  if (!title) return;
+
+  const entries = loadRecent();
+  const stale = entries.filter((entry) => entry.filter.feed === feed && entry.feedTitle !== title);
+  if (stale.length === 0) return;
+  for (const entry of stale) entry.feedTitle = title;
+  saveRecent(entries);
+}
+
+function renderRecent() {
+  const entries = loadRecent();
+  el.recentSection.hidden = entries.length === 0;
+  el.recent.replaceChildren(...entries.map(buildRecentRow));
+}
+
+function buildRecentRow(entry) {
+  const row = el.recentTemplate.content.cloneNode(true).querySelector(".recent-item");
+  const href = recentHref(entry);
+
+  const link = row.querySelector(".recent-link");
+  link.href = href;
+  link.title = entry.filter.feed;
+  row.querySelector(".recent-title").textContent =
+    entry.filter.title || entry.feedTitle || feedHost(entry.filter.feed);
+  row.querySelector(".recent-date").textContent = formatDate(entry.usedAt);
+  row.querySelector(".recent-what").textContent = describeLink(entry);
+  row.querySelector(".recent-remove").addEventListener("click", () => forgetLink(href));
+
+  return row;
+}
+
+// describeLink spells the filter out, so that two links to one feed can be
+// told apart.
+function describeLink(entry) {
+  const { filter } = entry;
+  const parts = [entry.id ? "short link" : "direct link"];
+
+  for (const rule of filter.rules) parts.push(`${rule.neg ? "drop" : "keep"} ${rule.re}`);
+
+  const min = filter.minMinutes || 0;
+  const max = filter.maxMinutes || 0;
+  if (min && max) parts.push(`${min}–${max} min`);
+  else if (min) parts.push(`from ${min} min`);
+  else if (max) parts.push(`up to ${max} min`);
+
+  if (parts.length === 1) parts.push("no filters");
+  return parts.join(" · ");
+}
+
+function feedHost(feed) {
+  try {
+    return new URL(feed).host || feed;
+  } catch {
+    return feed;
+  }
+}
+
 /* ---------- misc ---------- */
 
 function applyView(view) {
@@ -669,10 +798,27 @@ function wire() {
 
   el.copyInline.addEventListener("click", () => copyFrom(el.inlineUrl, el.copyInline));
   el.copyStored.addEventListener("click", () => copyFrom(el.updateUrl, el.copyStored));
+
+  // Copying the direct URL is how it ends up in a podcast client, so that is
+  // when it is worth remembering — whether by the button or by hand.
+  el.copyInline.addEventListener("click", rememberInlineLink);
+  el.inlineUrl.addEventListener("copy", rememberInlineLink);
+
+  // Another tab may have used a link meanwhile.
+  window.addEventListener("storage", (e) => {
+    // A null key means the whole storage was cleared.
+    if (e.key === RECENT_KEY || e.key === null) renderRecent();
+  });
+}
+
+function rememberInlineLink() {
+  const filter = cleanFilter();
+  if (filter.feed) rememberLink({ filter });
 }
 
 async function main() {
   wire();
+  renderRecent();
   await loadConfig();
   if (await loadFromPageURL()) return;
   // Start with one empty filter so the shape of the form is obvious.

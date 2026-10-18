@@ -65,6 +65,15 @@
       </p>
       <p id="import-status" class="status" hidden></p>
     </div>
+
+    <div id="recent-section" class="field" hidden>
+      <p id="recent-label" class="field-label">Recently used</p>
+      <ul id="recent" class="recent" aria-labelledby="recent-label"></ul>
+      <p class="hint">
+        Links you created, copied, updated or opened here. The list lives in this browser
+        only — forgetting a link does not delete it from the server.
+      </p>
+    </div>
   </section>
 
   <section class="card">
@@ -226,6 +235,18 @@
       <button type="button" class="rule-remove ghost" aria-label="Remove filter">&times;</button>
     </div>
     <p class="rule-error status error" hidden></p>
+  </li>
+</template>
+
+<template id="recent-template">
+  <li class="recent-item">
+    <!-- biome-ignore lint/a11y/useAnchorContent: app.js fills the spans in -->
+    <a class="recent-link" href="/">
+      <span class="recent-title"></span>
+      <span class="recent-date"></span>
+      <span class="recent-what"></span>
+    </a>
+    <button type="button" class="recent-remove ghost" aria-label="Forget this link">&times;</button>
   </li>
 </template>
 

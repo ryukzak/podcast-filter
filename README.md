@@ -48,7 +48,11 @@ feed interactively:
 - the list scrolls independently of the page and holds its position while you
   edit, so you can keep one specific episode in view and watch it react;
 - pasting an existing filtered URL, a link id, or just a plain feed URL into
-  "Start from an existing URL" loads it for editing and debugging.
+  "Start from an existing URL" loads it for editing and debugging;
+- the links you create, copy, update or open are listed there under "Recently
+  used", so you can reopen one in a click instead of digging it out of your
+  podcast client. The list is kept in the browser's local storage, never on the
+  server.
 
 ### Filtering a Podcast Feed
 
