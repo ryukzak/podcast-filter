@@ -174,18 +174,6 @@ func (f Filter) Compile() ([]*regexp.Regexp, error) {
 	return regexes, nil
 }
 
-// Apply keeps the items the rules accept, see accepts for how the rules
-// combine.
-func (f Filter) Apply(items []Item, regexes []*regexp.Regexp) []Item {
-	filtered := make([]Item, 0, len(items))
-	for _, item := range items {
-		if f.accepts(item, regexes) {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
-}
-
 // accepts combines the rules the way an include/exclude list does: an episode
 // has to match at least one keep rule, and must not match any drop rule.
 //

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strconv"
@@ -12,48 +15,14 @@ import (
 	"time"
 )
 
-type Podcast struct {
-	XMLName xml.Name `xml:"rss"`
-	Version string   `xml:"version,attr"`
-	Channel Channel  `xml:"channel"`
-}
-
-type Channel struct {
-	XMLName       xml.Name `xml:"channel"`
-	Title         string   `xml:"title"`
-	Link          string   `xml:"link"`
-	Descr         string   `xml:"description"`
-	PubDate       string   `xml:"pubDate"`
-	LastBuildDate string   `xml:"lastBuildDate"`
-	Items         []Item   `xml:"item"`
-}
-
+// Item is the part of an episode the filter looks at.
 type Item struct {
-	XMLName     xml.Name  `xml:"item"`
-	Title       string    `xml:"title"`
-	Link        string    `xml:"link"`
-	Description string    `xml:"description"`
-	Enclure     Enclosure `xml:"enclosure"`
-	Guid        string    `xml:"guid"`
-	PubDate     string    `xml:"pubDate"`
-	Author      string    `xml:"author"`
-
-	// Duration is itunes:duration, read through previewFeedItem. It is not
-	// encoded back, so the served feed keeps the shape it always had.
-	Duration string `xml:"-"`
+	Title    string `xml:"title"`
+	Duration string `xml:"duration"` // itunes:duration, whatever the prefix is
 }
 
-type Enclosure struct {
-	XMLName xml.Name `xml:"enclosure"`
-	Url     string   `xml:"url,attr"`
-	Type    string   `xml:"type,attr"`
-	Length  string   `xml:"length,attr"`
-}
-
-// previewFeed is a second, wider view of the same XML, used only by the
-// builder. It is kept separate from Podcast on purpose: Podcast is re-encoded
-// into the feed we serve, so a field added there would also show up in the
-// output, while the builder just wants to read extra details.
+// previewFeed is what the builder reads from a feed. The feed we serve is not
+// decoded at all, see filterFeed.
 type previewFeed struct {
 	XMLName xml.Name `xml:"rss"`
 	Channel struct {
@@ -110,29 +79,200 @@ func fetchFeed(ctx context.Context, podcastURL string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, maxFeedSize))
 }
 
-func GetPodcasts(ctx context.Context, podcastURL string) (*Podcast, error) {
-	raw, err := fetchFeed(ctx, podcastURL)
-	if err != nil {
-		return nil, err
-	}
+const (
+	itunesNS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
+	atomNS   = "http://www.w3.org/2005/Atom"
+)
 
-	var podcast *Podcast
-	if err := xml.Unmarshal(raw, &podcast); err != nil {
-		return nil, err
-	}
+// feedRewrite is what filterFeed changes on the way from the origin feed to the
+// feed we serve.
+type feedRewrite struct {
+	// Keep tells which episodes stay.
+	Keep func(Item) bool
+	// Title replaces the channel title; empty means "<origin title> (filtered)".
+	Title string
+	// Link replaces the channel link. It is the filtered feed itself.
+	Link string
+	// FilterLink goes in front of the channel description, so that the filter
+	// can be found again from the podcast client.
+	FilterLink string
+}
 
-	// Both views decode the same channel/item list, so items line up by index.
-	details := &previewFeed{}
-	if err := xml.Unmarshal(raw, details); err != nil {
-		return nil, err
-	}
-	for i := range podcast.Channel.Items {
-		if i < len(details.Channel.Items) {
-			podcast.Channel.Items[i].Duration = details.Channel.Items[i].Duration
+// feedStats is what filterFeed did, for the log.
+type feedStats struct {
+	OriginTitle, Title string
+	Total, Kept        int
+}
+
+// splice replaces raw[start:end] with text.
+type splice struct {
+	start, end int64
+	text       string
+}
+
+// feedFilter is filterFeed's state while it walks the feed.
+type feedFilter struct {
+	feedRewrite
+	dec       *xml.Decoder
+	stats     feedStats
+	described bool
+}
+
+// filterFeed copies the origin feed byte for byte, except for the episodes Keep
+// drops and the few channel elements it rewrites. Decoding into a struct and
+// encoding that back would lose whatever the struct does not name — the
+// artwork, the author, the categories, half of every episode — and
+// encoding/xml garbles namespace prefixes on top of that.
+func filterFeed(raw []byte, rw feedRewrite) ([]byte, feedStats, error) {
+	f := &feedFilter{feedRewrite: rw, dec: xml.NewDecoder(bytes.NewReader(raw))}
+	var splices []splice
+
+	depth := 0 // 1 inside <rss>, 2 inside <channel>
+	for {
+		start := f.dec.InputOffset()
+		tok, err := f.dec.Token()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, f.stats, err
+		}
+
+		switch tok := tok.(type) {
+		case xml.StartElement:
+			switch {
+			case depth == 0 && tok.Name.Local != "rss":
+				return nil, f.stats, fmt.Errorf("expected an RSS feed, got <%s>", tok.Name.Local)
+			case depth == 0, depth == 1 && tok.Name.Local == "channel":
+				depth++
+			case depth == 1:
+				if err := f.dec.Skip(); err != nil {
+					return nil, f.stats, err
+				}
+			default:
+				text, keep, err := f.channelChild(tok, raw[start:])
+				if err != nil {
+					return nil, f.stats, err
+				}
+				if !keep {
+					splices = append(splices, splice{start, f.dec.InputOffset(), text})
+				}
+			}
+		case xml.EndElement:
+			depth--
+			if depth == 1 && !f.described {
+				// RSS requires a description, but not every feed has one.
+				splices = append(splices, splice{start, start, element("description", f.description(""))})
+			}
 		}
 	}
-	return podcast, nil
+
+	var out bytes.Buffer
+	out.Grow(len(raw))
+	from := int64(0)
+	for _, s := range splices {
+		out.Write(raw[from:s.start])
+		out.WriteString(s.text)
+		from = s.end
+	}
+	out.Write(raw[from:])
+	return out.Bytes(), f.stats, nil
 }
+
+// channelChild reads one child of <channel>, which tag starts with, and tells
+// what replaces it unless keep is set. Empty text cuts the element out.
+func (f *feedFilter) channelChild(start xml.StartElement, tag []byte) (text string, keep bool, err error) {
+	var rewrite func(origin string) string
+
+	name := start.Name
+	switch {
+	case name.Space == "" && name.Local == "item":
+		return f.item(start)
+	case name.Local == "title" && (name.Space == "" || isITunes(name)):
+		rewrite = f.title
+	case name.Space == "" && name.Local == "link":
+		rewrite = func(string) string { return f.Link }
+	case name.Space == "" && name.Local == "description":
+		f.described = true
+		rewrite = f.description
+	case name.Local == "summary" && isITunes(name):
+		rewrite = f.description
+	// Both send podcast clients back to the origin feed, and a client that
+	// follows one ends up subscribed to every episode again.
+	case name.Space == atomNS && name.Local == "link", name.Local == "new-feed-url" && isITunes(name):
+		return "", false, f.dec.Skip()
+	default:
+		return "", true, f.dec.Skip()
+	}
+
+	var origin string
+	if err := f.dec.DecodeElement(&origin, &start); err != nil {
+		return "", false, err
+	}
+	return element(qualifiedName(tag), rewrite(origin)), false, nil
+}
+
+func (f *feedFilter) item(start xml.StartElement) (text string, keep bool, err error) {
+	var item Item
+	if err := f.dec.DecodeElement(&item, &start); err != nil {
+		return "", false, err
+	}
+
+	f.stats.Total++
+	if !f.Keep(item) {
+		return "", false, nil
+	}
+	f.stats.Kept++
+	return "", true, nil
+}
+
+func (f *feedFilter) title(origin string) string {
+	title := f.Title
+	if title == "" {
+		title = origin + " (filtered)"
+	}
+	f.stats.OriginTitle, f.stats.Title = origin, title
+	return title
+}
+
+// description puts the link to the filter in front of the origin description,
+// in the markup the description already uses, so that it reads right whether
+// the client shows it as HTML or as text.
+func (rw feedRewrite) description(origin string) string {
+	if tagRe.MatchString(origin) {
+		link := html.EscapeString(rw.FilterLink)
+		return fmt.Sprintf(`<p>Filter: <a href="%s">%s</a></p>`, link, link) + origin
+	}
+	if strings.TrimSpace(origin) == "" {
+		return "Filter: " + rw.FilterLink
+	}
+	return "Filter: " + rw.FilterLink + "\n\n" + origin
+}
+
+// isITunes tells whether name is in the iTunes namespace, which feeds spell in
+// more than one case.
+func isITunes(name xml.Name) bool {
+	return strings.EqualFold(name.Space, itunesNS)
+}
+
+// qualifiedName reads the element name, prefix included, from the start tag at
+// the head of tag. The decoder only reports the namespace a prefix stands for,
+// and a rewritten element has to keep the prefix the feed declared.
+func qualifiedName(tag []byte) string {
+	name := tag[1:] // past the '<'
+	if end := bytes.IndexAny(name, " \t\r\n/>"); end >= 0 {
+		name = name[:end]
+	}
+	return string(name)
+}
+
+func element(qname, text string) string {
+	return "<" + qname + ">" + textEscaper.Replace(text) + "</" + qname + ">"
+}
+
+// textEscaper escapes element text. Unlike xml.EscapeText it leaves line breaks
+// alone, so a description stays readable in the raw feed.
+var textEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
 // feedCache keeps recently fetched feeds for a short while. The builder
 // re-evaluates the filter on every keystroke, and there is no reason to hit the

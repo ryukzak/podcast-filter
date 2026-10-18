@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -12,6 +13,17 @@ func items(titles ...string) []Item {
 		result = append(result, Item{Title: title})
 	}
 	return result
+}
+
+// keep runs the filter over a list of episodes, the way filterFeed does.
+func keep(f Filter, list []Item, regexes []*regexp.Regexp) []Item {
+	kept := make([]Item, 0, len(list))
+	for _, item := range list {
+		if f.accepts(item, regexes) {
+			kept = append(kept, item)
+		}
+	}
+	return kept
 }
 
 func titles(list []Item) []string {
@@ -102,7 +114,7 @@ func apply(t *testing.T, f Filter, list ...string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return titles(f.Apply(items(list...), regexes))
+	return titles(keep(f, items(list...), regexes))
 }
 
 func equal(got, want []string) bool {
@@ -192,7 +204,7 @@ func TestApplyIsOrderIndependent(t *testing.T) {
 func TestApplyWithoutRulesKeepsEverything(t *testing.T) {
 	f := Filter{}
 	regexes, _ := f.Compile()
-	if got := f.Apply(items("a", "b"), regexes); len(got) != 2 {
+	if got := keep(f, items("a", "b"), regexes); len(got) != 2 {
 		t.Fatalf("got %v, want both items", titles(got))
 	}
 }
@@ -243,7 +255,7 @@ func TestApplyLengthBounds(t *testing.T) {
 	regexes, _ := f.Compile()
 
 	// An episode with no usable duration is not hidden by the bounds.
-	got := titles(f.Apply(list, regexes))
+	got := titles(keep(f, list, regexes))
 	if want := []string{"medium", "unknown", "garbage"}; !equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
@@ -255,7 +267,7 @@ func TestApplyLengthBoundsOverrideKeep(t *testing.T) {
 	f := Filter{Rules: []Rule{{Re: "Шульман"}}, MinMinutes: 30}
 	regexes, _ := f.Compile()
 
-	if got := f.Apply(list, regexes); len(got) != 1 || got[0].Duration != "3600" {
+	if got := keep(f, list, regexes); len(got) != 1 || got[0].Duration != "3600" {
 		t.Fatalf("got %+v, want only the hour-long episode", got)
 	}
 }

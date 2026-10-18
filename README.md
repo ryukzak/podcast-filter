@@ -70,6 +70,16 @@ Example Request:
 GET /filter?feed=https://feedmaster.umputun.com/rss/echo-msk&title=Эхо (часть)&re=(?i)(Шульман)
 ```
 
+The filtered feed is the origin feed with the dropped episodes cut out: the
+artwork, the author, the categories and every episode's details come through as
+they are. Only a few things change:
+
+- the title gets " (filtered)" appended, unless `title` is set;
+- the description starts with a link that opens the filter in the builder,
+  followed by the original description;
+- `atom:link` and `itunes:new-feed-url` are removed, since they point podcast
+  clients back to the unfiltered origin feed.
+
 It is possible to have several regular expressions. For example, you can remove
 something from the feed and filter what is left:
 
@@ -139,7 +149,7 @@ A filter is `{"feed": "…", "title": "…", "rules": [{"re": "…", "neg": fals
 
 The behavior of the Podcast Filter application can be customized using the following environment variables:
 
-- `BASE_URL`: The base URL to be used for constructing the filtered feed's link. By default, it is not set.
+- `BASE_URL`: The public URL of the service, used for the links inside the filtered feed. By default, they are built from the host the request was sent to.
 - `DB_PATH`: Where to keep the short-link database. Defaults to `podcast-filter.db` in the working directory, and to `/data/podcast-filter.db` in the Docker image.
 - `PORT`: Port to listen on. Defaults to `8080`.
 

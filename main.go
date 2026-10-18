@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"embed"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -11,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -49,39 +49,53 @@ func (s *server) filterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	feed, err := GetPodcasts(r.Context(), filter.Feed)
+	raw, err := fetchFeed(r.Context(), filter.Feed)
 	if err != nil {
 		logAndWriteErrorf(w, http.StatusUnprocessableEntity, "can't fetch origin podcast feed: %w", err)
 		return
 	}
 
-	feed.Channel.Link = s.baseURL + r.URL.String()
-	feed.Channel.Descr = fmt.Sprintf("%s \n %s", r.URL, feed.Channel.Descr)
-
-	title := filter.Title
-	if title == "" {
-		title = fmt.Sprintf("%s (filtered)", feed.Channel.Title)
-	}
-	log.Printf("Change feed title: %s -> %s < %s >\n", feed.Channel.Title, title, r.URL)
-	feed.Channel.Title = title
-
-	log.Printf("items before: %d\n", len(feed.Channel.Items))
-	for _, rule := range filter.Rules {
-		log.Printf("filter: %s neg: %t re: %s\n", title, rule.Neg, rule.Re)
-	}
-	feed.Channel.Items = filter.Apply(feed.Channel.Items, regexes)
-	log.Printf("items after: %d\n", len(feed.Channel.Items))
-
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	enc := xml.NewEncoder(w)
-	enc.Indent("", "  ")
-	if err := enc.Encode(feed); err != nil {
-		err = fmt.Errorf("failed to encode filtered feed: %w", err)
-		log.Println(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// The same query on / opens the filter in the builder.
+	origin := s.publicOrigin(r)
+	feed, stats, err := filterFeed(raw, feedRewrite{
+		Keep:       func(item Item) bool { return filter.accepts(item, regexes) },
+		Title:      filter.Title,
+		Link:       origin + r.URL.String(),
+		FilterLink: origin + "/?" + r.URL.RawQuery,
+	})
+	if err != nil {
+		logAndWriteErrorf(w, http.StatusUnprocessableEntity, "can't filter feed: %w", err)
 		return
 	}
+
+	log.Printf("Change feed title: %s -> %s < %s >\n", stats.OriginTitle, stats.Title, r.URL)
+	for _, rule := range filter.Rules {
+		log.Printf("filter: %s neg: %t re: %s\n", stats.Title, rule.Neg, rule.Re)
+	}
+	log.Printf("items: %d -> %d\n", stats.Total, stats.Kept)
+
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	if _, err := w.Write(feed); err != nil {
+		log.Printf("can't write filtered feed: %v\n", err)
+	}
+}
+
+// publicOrigin is where podcast clients reach the service: BASE_URL when it is
+// set, otherwise the host the request was sent to.
+func (s *server) publicOrigin(r *http.Request) string {
+	if s.baseURL != "" {
+		base := strings.TrimSuffix(s.baseURL, "/")
+		if !strings.Contains(base, "://") {
+			base = "http://" + base // as in the README: BASE_URL='localhost:8080'
+		}
+		return base
+	}
+
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
 }
 
 func (s *server) resolveFilter(r *http.Request) (Filter, error) {

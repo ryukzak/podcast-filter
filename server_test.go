@@ -14,11 +14,16 @@ import (
 )
 
 const sampleRSS = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Эхо</title>
     <link>https://example.com</link>
     <description>origin</description>
+    <atom:link href="https://example.com/rss" rel="self" type="application/rss+xml"/>
+    <itunes:new-feed-url>https://example.com/moved</itunes:new-feed-url>
+    <itunes:author>Эхо Москвы</itunes:author>
+    <itunes:image href="https://example.com/art.jpg"/>
+    <image><url>https://example.com/art.jpg</url><title>Эхо</title><link>https://example.com</link></image>
     <item>
       <title>Шульман про всё</title>
       <pubDate>Mon, 02 Jan 2006 15:04:05 +0000</pubDate>
@@ -159,20 +164,56 @@ func TestPreviewMarksItems(t *testing.T) {
 	}
 }
 
-// The feed we serve must not grow the extra elements the preview reads.
-func TestFilteredFeedDoesNotLeakPreviewFields(t *testing.T) {
+// The served feed is the origin feed minus the dropped episodes: the artwork
+// and everything else the origin publishes come through as they are.
+func TestFilteredFeedKeepsOriginElements(t *testing.T) {
 	env := newTestEnv(t)
 
 	filter := Filter{Feed: env.origin.URL, Rules: []Rule{{Re: "(?i)шульман"}}}
 	rec := env.do(t, http.MethodGet, "/filter?"+filter.Query().Encode(), nil)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("code = %d", rec.Code)
+		t.Fatalf("code = %d, body = %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+
+	for _, kept := range []string{
+		`xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"`,
+		`<itunes:image href="https://example.com/art.jpg"/>`,
+		`<image><url>https://example.com/art.jpg</url><title>Эхо</title><link>https://example.com</link></image>`,
+		`<itunes:author>Эхо Москвы</itunes:author>`,
+		`<itunes:duration>3600</itunes:duration>`,
+		`<itunes:subtitle>О самом важном</itunes:subtitle>`,
+		`<enclosure url="https://example.com/2.mp3" type="audio/mpeg" length="52428800"/>`,
+	} {
+		if !strings.Contains(body, kept) {
+			t.Errorf("served feed lost %s", kept)
+		}
 	}
 
-	for _, leaked := range []string{"<duration>", "<subtitle>", "О самом важном"} {
-		if strings.Contains(rec.Body.String(), leaked) {
-			t.Fatalf("served feed contains %q", leaked)
+	// Either of these would move a podcast client back to the origin feed.
+	for _, dropped := range []string{"Кто-то другой", "https://example.com/rss", "https://example.com/moved"} {
+		if strings.Contains(body, dropped) {
+			t.Errorf("served feed still has %s", dropped)
 		}
+	}
+
+	var feed struct {
+		Channel struct {
+			Title       string `xml:"title"`
+			Link        string `xml:"link"`
+			Description string `xml:"description"`
+		} `xml:"channel"`
+	}
+	if err := xml.Unmarshal(rec.Body.Bytes(), &feed); err != nil {
+		t.Fatal(err)
+	}
+
+	query := filter.Query().Encode()
+	if want := "http://example.com/filter?" + query; feed.Channel.Link != want {
+		t.Errorf("link = %q, want %q", feed.Channel.Link, want)
+	}
+	if want := "Filter: http://example.com/?" + query + "\n\norigin"; feed.Channel.Description != want {
+		t.Errorf("description = %q, want %q", feed.Channel.Description, want)
 	}
 }
 
@@ -293,7 +334,7 @@ func TestLinkLifecycle(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("filter: code = %d, body = %s", rec.Code, rec.Body)
 	}
-	var feed Podcast
+	var feed previewFeed
 	if err := xml.Unmarshal(rec.Body.Bytes(), &feed); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +353,7 @@ func TestLinkLifecycle(t *testing.T) {
 	}
 
 	rec = env.do(t, http.MethodGet, created.Path, nil)
-	feed = Podcast{}
+	feed = previewFeed{}
 	if err := xml.Unmarshal(rec.Body.Bytes(), &feed); err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +428,7 @@ func TestFilterHandlerInlineQuery(t *testing.T) {
 		t.Fatalf("code = %d, body = %s", rec.Code, rec.Body)
 	}
 
-	var feed Podcast
+	var feed previewFeed
 	if err := xml.Unmarshal(rec.Body.Bytes(), &feed); err != nil {
 		t.Fatal(err)
 	}
